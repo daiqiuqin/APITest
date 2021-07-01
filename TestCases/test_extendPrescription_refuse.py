@@ -1,0 +1,305 @@
+#-*-coding:utf-8 -*-
+#@Time :2021/6/1 17:10
+#@Author :daiqiuqin
+#@File  :test_extendPrescription_refuse.py
+
+import jsonpath
+import unittest
+from Common.myddt import ddt,data
+from Common.RWexcel  import ReadExcel,Wexcel
+from TestCases.login import userApp_tr_login
+from Common.requestLib import res
+from Common.handle_data import pre_data,replace_mark_with_data
+from Common.EvnData import EnvData,clear_EnvData_attrs
+from Common.logger import log
+import os
+from Common.handle_path import datas_dir,reports_dir
+from Common.conf import conf
+from Common.CheckPoint import CheckPoint
+
+# 读取测试用例
+readExcelName=conf.getOption("excel","readExcelName")
+readExcel = os.path.join(datas_dir,readExcelName)
+readSheet = '在线续方流程（拒绝）'
+excel = ReadExcel(readExcel, readSheet)
+titles = excel.read_titles()
+alldatas = excel.read_all_datas()
+maxRow = excel.get_max_row() - 1
+
+@ddt
+class test_extendPrescription_refuse(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.token=userApp_tr_login()
+        cls.row=1
+
+        #执行testCase前先清除环境变量
+        clear_EnvData_attrs()
+        log.info("测试套件开始执行,共有{}条用例".format(maxRow))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        log.info("测试套件执行完毕")
+
+    def setUp(self) -> None:
+        log.info("用例开始执行")
+
+    def tearDown(self) -> None:
+        log.info("用例结束执行")
+
+    @data(*alldatas)
+    def test_extendPrescription_common(self,data):
+        # 判断是否跳过用例
+        isexcute = pre_data(data['isexcute'])
+        if isexcute=="n":
+            self.skipTest("跳过这个用例")
+
+        #####前置处理#####
+        # 读取token
+        token = self.token
+
+        #数据准备
+        hospitalId=conf.getOption("tr-hospital", "hospitalId", "str")
+        hospitalName = conf.getOption("tr-hospital", "hospitalName", "str")
+        groupHospitalName = conf.getOption("tr-hospital", "groupHospitalName", "str")
+        groupHospitalId = conf.getOption("tr-hospital", "groupHospitalId", "str")
+        doctorName=conf.getOption("tr-doctor", "doctorName", "str")
+        doctorId=conf.getOption("tr-doctor","doctorId","str")
+        doctorJgId=conf.getOption("tr-doctor","doctorJgId","str")
+        doctoriuid=conf.getOption("tr-doctor","doctoriuid","str")
+        contactId=conf.getOption("tr-patient","contactId","str")
+        contactJgId=conf.getOption("tr-patient","contactJgId","str")
+        patientiuid=conf.getOption("tr-patient","patientiuid","str")
+        patientPhone=conf.getOption("tr-patient","patientPhone","str")
+        patientName = conf.getOption("tr-patient", "patientName", "str")
+
+        setattr(EnvData, "hospitalId", hospitalId)
+        setattr(EnvData, "hospitalName", hospitalName)
+        setattr(EnvData, "groupHospitalName", groupHospitalName)
+        setattr(EnvData, "groupHospitalId", groupHospitalId)
+        setattr(EnvData, "doctorName", doctorName)
+        setattr(EnvData, "doctorId", doctorId)
+        setattr(EnvData, "doctorJgId", doctorJgId)
+        setattr(EnvData, "doctoriuid", doctoriuid)
+        setattr(EnvData, "contactId", contactId)
+        setattr(EnvData, "contactJgId", contactJgId)
+        setattr(EnvData, "patientiuid", patientiuid)
+        setattr(EnvData, "patientPhone", patientPhone)
+        setattr(EnvData, "patientName", patientName)
+
+        #替换参数
+        data = replace_mark_with_data(data)
+
+        # 读取数据
+        id = pre_data(data['id'])
+        title =pre_data (data['title'])
+        protocal = pre_data(data['protocal'])
+        method = pre_data(data['method'])
+        host = pre_data(data['host'])
+        path = pre_data(data['path'])
+        request_data = pre_data(data['request_data'])
+        files = pre_data(data['files'])
+        extract_data = pre_data(data['extract_data'])
+        expected =pre_data (data['expected'])
+
+
+        # 接口请求
+        headers = {
+            "content-type": "application/json;charset=UTF-8",
+            "Authorization":"Bearer "+token
+            }
+
+        if not files:
+            files=None
+
+        url=protocal+"://"+host+path
+        response=res(method,url,request_data,headers,files)
+        response_text = response.text
+        response_json = response.json()
+        request_url=response.request.url
+        request_headers=response.headers
+        request_body = response.request.body
+
+        if not isinstance(request_body,bytes) and request_body!=None:
+            request_body = "requestbody非bytes格式,不记录"
+
+        #####后置处理#####
+        if extract_data:
+            extract_data_list = extract_data.split(",")
+            for item in extract_data_list:
+                extract_data_list = item.split("=")
+                extract_name = extract_data_list[0]
+                extract_formula = extract_data_list[1]
+                try:
+                    extract_value = jsonpath.jsonpath(response_json, extract_formula)[0]
+                    print("提取{}：{}".format(extract_name, extract_value))
+                    setattr(EnvData, extract_name, extract_value)
+                except TypeError as e:
+                    print("{}未提取到数据，错误原因:{}".format(extract_name,e))
+
+            if title == "患者端-获取就诊人信息成功并提取数据":
+                try:
+                    resSex = getattr(EnvData, "resSex")
+                    if resSex == "男":
+                        sexCode = "1"
+                    elif resSex == "女":
+                        sexCode = "2"
+                    else:
+                        sexCode = "3"
+                    setattr(EnvData, "sexCode", sexCode)
+                except:
+                    print("性别未提取到数据")
+
+        # 断言
+        try:
+            if title=="患者端-检查申请中续方单的数量增加1":
+                total = getattr(EnvData, "extendPrescriptionCount1")
+                extendPrescriptionCount2=getattr(EnvData, "extendPrescriptionCount2")
+                total_AfterAdd=total+1
+                myassert = CheckPoint()
+                myassert.checkAssertIn(expected, response_text, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(extendPrescriptionCount2,total_AfterAdd, msg=id + "响应结果与预期不符合")
+
+            if title=="患者端-查询申请中续方列表，有新增续方单且数据正确":
+                extendPrescriptionId=getattr(EnvData,"extendPrescriptionId")
+                resultList=getattr(EnvData,"resultList")
+                resSex=getattr(EnvData,"resSex")
+                sexCode = getattr(EnvData, "sexCode")
+                resContactId = getattr(EnvData, "resContactId")
+                resContactName = getattr(EnvData, "resContactName")
+                resBirthday = getattr(EnvData, "resBirthday")
+                resIdCard = getattr(EnvData, "resIdCard")
+                resPhone = getattr(EnvData, "resPhone")
+
+                for item in resultList:
+                    if item["extendPrescriptionId"]==extendPrescriptionId:
+                        print("======extendPrescriptionId========{}".format(extendPrescriptionId))
+                        myassert = CheckPoint()
+                        myassert.checkAssertIn(expected, response_text, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["remake"], "续方备注，吧啦吧啦", msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["sex"],resSex, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(str(item["sexCode"]),sexCode, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["contactId"], resContactId, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["contactName"], resContactName, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["birthday"],resBirthday, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["idCard"],resIdCard, msg=id + "响应结果与预期不符合")
+                        myassert.checkAssertIn(item["phone"],resPhone, msg=id + "响应结果与预期不符合")
+
+                myassert.checkTestResult()
+                testResult = 'Pass'
+                log.info('===={}断言成功===='.format(id))
+
+            if title=="患者端-检查续方详情数据与新增一致":
+
+                resSex=getattr(EnvData, "resSex")
+                sexCode=getattr(EnvData, "sexCode")
+                resContactName=getattr(EnvData, "resContactName")
+                resContactId=getattr(EnvData, "resContactId")
+                resBirthday=getattr(EnvData, "resBirthday")
+                resIdCard=getattr(EnvData, "resIdCard")
+                resPhone=getattr(EnvData, "resPhone")
+
+                resRemake2=getattr(EnvData,"resRemake2")
+                resSex2=getattr(EnvData, "resSex2")
+                resSexCode2=getattr(EnvData, "resSexCode2")
+                resContactName2=getattr(EnvData, "resContactName2")
+                resContactId2=getattr(EnvData, "resContactId2")
+                resBirthday2=getattr(EnvData, "resBirthday2")
+                resIdCard2=getattr(EnvData, "resIdCard2")
+                resPhone2=getattr(EnvData, "resPhone2")
+
+                myassert = CheckPoint()
+                myassert.checkAssertIn(expected, response_text, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resRemake2, "续方备注，吧啦吧啦", msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resSex2,resSex, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(str(resSexCode2), sexCode, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resContactName2,resContactName, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resContactId2,resContactId, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resBirthday2,resBirthday, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resIdCard2,resIdCard, msg=id + "响应结果与预期不符合")
+                myassert.checkAssertIn(resPhone2,resPhone, msg=id + "响应结果与预期不符合")
+
+                myassert.checkTestResult()
+                testResult = 'Pass'
+                log.info('===={}断言成功===='.format(id))
+
+                if title == "医生端-检查续方详情数据与新增一致":
+                    resSex = getattr(EnvData, "resSex")
+                    sexCode = getattr(EnvData, "sexCode")
+                    resContactName = getattr(EnvData, "resContactName")
+                    resContactId = getattr(EnvData, "resContactId")
+                    resBirthday = getattr(EnvData, "resBirthday")
+                    resIdCard = getattr(EnvData, "resIdCard")
+                    resPhone = getattr(EnvData, "resPhone")
+
+                    resRemake2 = getattr(EnvData, "resRemake2")
+                    resSex2 = getattr(EnvData, "resSex2")
+                    resSexCode2 = getattr(EnvData, "resSexCode2")
+                    resContactName2 = getattr(EnvData, "resContactName2")
+                    resContactId2 = getattr(EnvData, "resContactId2")
+                    resBirthday2 = getattr(EnvData, "resBirthday2")
+                    resIdCard2 = getattr(EnvData, "resIdCard2")
+                    resPhone2 = getattr(EnvData, "resPhone2")
+
+                    myassert = CheckPoint()
+                    myassert.checkAssertIn(expected, response_text, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resRemake2, "续方备注，吧啦吧啦", msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resSex2, resSex, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(str(resSexCode2), sexCode, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resContactName2, resContactName, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resContactId2, resContactId, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resBirthday2, resBirthday, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resIdCard2, resIdCard, msg=id + "响应结果与预期不符合")
+                    myassert.checkAssertIn(resPhone2, resPhone, msg=id + "响应结果与预期不符合")
+
+                    myassert.checkTestResult()
+                    testResult = 'Pass'
+                    log.info('===={}断言成功===='.format(id))
+
+            else:
+                myassert = CheckPoint()
+                myassert.checkAssertIn(expected, response_text, msg=id + "响应结果与预期不符合")
+                myassert.checkTestResult()
+                testResult = 'Pass'
+                log.info('===={}断言成功===='.format(id))
+
+        except Exception as msg:
+            testResult = 'Fail'
+            log.info('====错误信息：%s===='%msg)
+            setattr(EnvData, "gl_IsFailFlag", 1)
+            raise
+
+        finally:
+            # 打印日志
+            log.info("====用例id:{}=====".format(id))
+            log.info("====用例标题:{}=====".format(title))
+            log.info("====请求url:{}=====".format(request_url))
+            log.info("====请求headers:{}=====".format(request_headers))
+            log.info("====请求body:{}=====".format(request_body))
+            log.info("====预期结果:{}=====".format(expected))
+            log.info("====返回结果:{}=====".format(response_text))
+            log.info("====测试结果:{}=====".format(testResult))
+            # 测试结果存入excel
+
+            try:
+                # 用于测试套件执行时的命名，根据配置文件设置+时间戳命名
+                gl_excelname = getattr(EnvData, "gl_excelname")
+                writeExcelName = gl_excelname
+            except:
+                # 用于单个用例执行时的命名，根据配置文件设置命名
+                writeExcelName = conf.getOption("excel", "writeExcelName", "str")
+
+            output_file = os.path.join(reports_dir, writeExcelName)
+
+            print(writeExcelName)
+            try:
+                Wexcel(output_file, readSheet, self.row, id, title, method, request_url, request_body, expected,
+                       response_text,
+                       testResult)
+                # 写入的行数加1
+                test_extendPrescription_refuse.row += 1
+            except IOError as e:
+                print(e)
+
+if __name__=='__main__':
+    unittest.main()

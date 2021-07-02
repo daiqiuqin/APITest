@@ -25,7 +25,6 @@ setattr(EnvData, "gl_excelname",writeExcelName)
 
 # 基于路径，将测试用例组合成套件,默认pattern='test*.py'
 suite = unittest.defaultTestLoader.discover(start_dir=case_dir,pattern='test_jenkins.py')
-suite = unittest.TestLoader.discover(case_dir)
 runner=BeautifulReport(suite)
 
 # 输出的测试报告名称及路径
